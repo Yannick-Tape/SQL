@@ -1,7 +1,3 @@
-# SQL
-Implémentation d'une base de données relationnelle
-
-
 ########################################## PARTIE I ##################################
 Créer un repo sur GitHub denommé SQL
 cd~ puis mkdir SQL_langage_partie
@@ -52,6 +48,7 @@ Mot de passe : data_engineer
 Une fois connecté à pgAdmin, ajoute un nouveau serveur.
 Name : PostgreSQL SERVER
 # clique sur le bouton Connection puis :
+host name/adress : adresse ip  de ma VM
 maintenance database : animedb (voir variable d'env du docker-compose POSTGRES_DB: animedb)
 Nom d'utilisateur : daniel
 Mot de passe : datascientest
@@ -178,25 +175,168 @@ SELECT * FROM Anime_Producer;
 
 Nous sommes dans le repertoire : Ubuntu/home/SQL_langage_partie/SQL
 
-# Téléchagez les données à l'aide de la commande suivante
+# Téléchagez les données à la racine (ubuntu/home) :
 cd && wget https://dst-de.s3.eu-west-3.amazonaws.com/bdd_postgres_fr/database/examen.sql
 
+########### debut commande qui ne marche pas ################
 # Mettez en place la base de données:
 docker exec -i pg_container psql -U daniel -d exam_Yannick_TAPE < ./examen.sql
+########### fin commande qui ne marche pas ################ on trouve une autre solution :
+
+D'après notre docker-compose (fichier docker-compose.yml), la seule base de données créée automatiquement au démarrage est animedb.
+C'est pourquoi On va donc la créer manuellement exam_Yannick_TAPE sinon PostgreSQL ne trouve pas:
+
+1. Vérifier que les conteneurs tournent :
+docker ps       # pour vérifier que pg_container tourne (sinon faire docker-compose up -d)
+
+2. Se connecter à PostgreSQL et créer la base de données :
+Comme seule la base animedb existe, on doit se connecter à elle et créer exam_Yannick_TAPE
+docker exec -it pg_container psql -U daniel -d animedb
+CREATE DATABASE "exam_Yannick_TAPE";
+\q
+3. Importer examen.sql dans la base exam_Yannick_TAPE
+docker exec -it pg_container psql -U daniel -d "exam_Yannick_TAPE" -f /home/examen.sql
+
+4. Vérifier que les tables ont bien été importées
+docker exec -it pg_container psql -U daniel -d "exam_Yannick_TAPE"
+\dt          # Si les tables apparaissent, tout est bon !
+
+# on ouvre pgAdmin pour lancer les requetes:
+Ouvre ton navigateur et va à http://localhost:5050 (ou l'adresse IP de ton serveur si tu ne travailles pas en local).
+Connecte-toi avec les identifiants suivants :
+Email : daniel@datascientest.com
+Mot de passe : data_engineer
+Une fois connecté à pgAdmin, ajoute un nouveau serveur.
+Name : Pokemon SERVER
+# clique sur le bouton Connection puis :
+host name/adress : adresse ip  de ma VM
+maintenance database:exam_Yannick_TAPE (voir ci-dessus CREATE DATABASE "exam_Yannick_TAPE";
+)
+Nom d'utilisateur : daniel
+Mot de passe : datascientest
 
 
 
 
+-- 	COMMANDE SQL A COPIER-COLLER DANS PGADMIN EXAM-PART2
+
+
+-- Requête 1: Compter le nombre de Pokémon par type dans l'ordre décroissant.
+SELECT name_type, COUNT(*) 
+FROM PokemonType 
+JOIN Types ON PokemonType.type_id = Types.type_id 
+GROUP BY name_type 
+ORDER BY COUNT(*) DESC;
+
+-- Requête 2: Lister les Pokémon avec un nombre de base de points supérieur à 600, triés de manière décroissante.
+SELECT name, base_total 
+FROM Pokemon 
+WHERE base_total > 600 
+ORDER BY base_total DESC;
+
+-- Requête 3: Afficher les types de Pokémon avec la base de points moyenne dans l'ordre croissant
+SELECT Types.name_type, AVG(Pokemon.base_total) AS moyenne_points 
+FROM Pokemon
+JOIN PokemonType ON Pokemon.pokedex_number = PokemonType.pokedex_number
+JOIN Types ON PokemonType.type_id = Types.type_id
+GROUP BY Types.name_type
+ORDER BY moyenne_points ASC;
+
+-- Requête 4: Trouver les Pokémon qui ont la capacité spéciale 'Overgrow' et trier par la base de points dans un ordre décroissant.
+SELECT Pokemon.name, Pokemon.base_total 
+FROM Pokemon
+JOIN PokemonAbility ON Pokemon.pokedex_number = PokemonAbility.pokedex_number
+JOIN Abilities ON PokemonAbility.ability_id = Abilities.ability_id
+WHERE Abilities.name_ability = 'Overgrow'
+ORDER BY Pokemon.base_total DESC;
+
+-- Requête 5: Lister les noms des Pokémon, leur type principal et leur type secondaire (s'ils en ont un). Trier par le nom.
+SELECT p.name, 
+       MIN(t.name_type) AS type_principal, 
+       CASE 
+           WHEN COUNT(t.name_type) > 1 THEN MAX(t.name_type) 
+           ELSE 'Aucun' 
+       END AS type_secondaire
+FROM Pokemon p
+JOIN PokemonType pt ON p.pokedex_number = pt.pokedex_number
+JOIN Types t ON pt.type_id = t.type_id
+GROUP BY p.name
+ORDER BY p.name;
+
+-- Requête 6: Afficher les Pokémon avec un total de stats supérieur à la moyenne par génération.
+SELECT p.name, p.generation, p.base_total
+FROM Pokemon p
+WHERE p.base_total > (
+    SELECT AVG(p2.base_total) 
+    FROM Pokemon p2 
+    WHERE p2.generation = p.generation
+)
+ORDER BY p.generation, p.base_total DESC;
+
+-- Requête 7: Trouver les Pokémon de type "fire" avec une attaque supérieure à 100
+SELECT p.name, s.attack 
+FROM Pokemon p
+JOIN Stats s ON p.pokedex_number = s.pokedex_number
+JOIN PokemonType pt ON p.pokedex_number = pt.pokedex_number
+JOIN Types t ON pt.type_id = t.type_id
+WHERE LOWER(t.name_type) = 'fire' AND s.attack > 100
+ORDER BY s.attack DESC;
+
+-- Requête 8: Indiquer si le total des stats d'un Pokémon est supérieur ou inférieur à la moyenne par génération
+SELECT p.name, p.generation, p.base_total,
+       CASE 
+           WHEN p.base_total > (SELECT AVG(p2.base_total) FROM Pokemon p2 WHERE p2.generation = p.generation) 
+           THEN 'Supérieur à la moyenne' 
+           ELSE 'Inférieur ou égal à la moyenne' 
+       END AS comparaison
+FROM Pokemon p
+ORDER BY p.generation, p.base_total DESC;
 
 
 
+---    EXAM-PART2 PSYCOPG2 script_pokemon.py      ---	
 
+- le script script_pokemon.py permet de lancer les requêtes faites dans la partie 2 :
+python3 script_pokemon.py
+- La sauvegarde de la base de données :
 
+  	1. Exécute cette commande dans ta VM Ubuntu pour exporter ta base de données exam_Yannick_TAPE en fichier SQL sur ta VM:
+docker exec -t pg_container pg_dump -U daniel -d exam_Yannick_TAPE > exam_Yannick_TAPE.sql
+	puis Vérifie que le fichier est bien créé avec :
+ls -lh exam_Yannick_TAPE.sql
 
+# on s'assure que ces 3 files sont également présents :
+vim requete_SQL_Part1.sql
+vim requete_SQL_Part2.sql
+vim script_pokemon.py
 
+	2.  Création de l’archive exam_TAPE.tar
+mkdir exam_TAPE
 
+# on copie-colle les files à compresser :
+cp exam_Yannick_TAPE.sql requete_SQL_Part1.sql requete_SQL_Part2.sql script_pokemon.py docker-compose.yaml exam_TAPE/
 
+ls -l ./exam_TAPE/  # tout est ok
 
+# Puis, on crée l’archive .tar :
+tar -cvf exam_TAPE.tar exam_TAPE
+ls -l
 
+	3.  Transfert du fichier exam_TAPE.tar sur ta machine locale avec scp
+#######
+COMMANDE A EXECUTER DANS MON TERMINAL WINDOWS LOCAL CMD pour voir si mon ordinateur peut acceder à la VM :
+ssh -i "C:\Users\33669\Downloads\data_enginering_machine.pem" ubuntu@34.244.134.220
+exit # c'était juste une vérification. on viens de se deconnecter de la VM 
 
+Enfin la commande (toujours sur mon cmd) pour ensuite faire le transfer du .tar :
+scp -i "C:\Users\33669\Downloads\data_enginering_machine.pem" ubuntu@34.244.134.220:~/SQL_langage_partie/SQL/exam_TAPE.tar .
+
+Le fichier .tar se trouve désormais sur mon ordinateur local. je peux le soumettre à la correction de DS ( C:\Users\33669\exam_TAPE.tar)
+
+git status
+git add *
+git status
+git commit -m "mon examen de SQL complet"
+git status
+git push
 
